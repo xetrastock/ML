@@ -1,0 +1,103 @@
+---
+title: "Human Activity Recognition - Practical Machine Learning"
+author: "Jonathan Jacobs"
+date: "20 March 2016"
+output: html_document
+---
+
+## Introduction
+
+This document describes the construction of a model to predict how well a subject is performing a dumbbell lifting exercise based on motion data captured by sensors on the belt, forearm, upper arm of the subject along with a sensor on the dumbbell itself.  
+
+## Importing Data
+We start by loading in the data and some relevant libraries that will be used.
+
+```{r}
+library(caret)
+library(gbm)
+library(e1071)
+
+trainraw <- read.csv("pml-training.csv")
+testraw <- read.csv("pml-testing.csv")
+```
+
+The classe variable is the dependent variable  that we wish to predict.  There are 5 classes A-E.  Class A represents a correct performance of the exercise while classes B-E represent distinct mistakes in performing the exercise.
+
+## Removing variables unlikely to have prediction power
+
+We now restrict the data to only the raw information collected by the sensors along with the dependent variable. Columns containing information about the timestamp, subject name and summary statistics about the information collected by the sensors are unlikely to have much predictive value. 
+
+```{r}
+train <- trainraw[,c(8:11,37:49,60:68,84:86,102,113:124,140,151:160)]
+test <- testraw[,c(8:11,37:49,60:68,84:86,102,113:124,140,151:160)]
+```
+
+## Splitting Training Data for Cross-validation
+
+We will split the training data into two parts:  70% will go into a sub-training set and the remaining 30% will form the cross-validation set for us to gauge out of sample variance.
+
+```{r}
+set.seed(6666)
+inTrain <- createDataPartition(y=train$classe,p=0.7,list=FALSE)
+subtrain <- train[inTrain,]
+cv <- train[-inTrain,]
+```
+
+## Exploratory Feature Plots
+
+With 52 features, feature plots will be somewhat confusing.  However, we can split up the variables into the subgroups in which they occur within the original data and perform separate feature plots.
+
+```{r}
+featurePlot(x=train[,1:4],y=subtrain$classe,plot="pairs")
+featurePlot(x=train[,5:17],y=subtrain$classe,plot="pairs")
+featurePlot(x=train[,18:29],y=subtrain$classe,plot="pairs")
+featurePlot(x=train[,30:42],y=subtrain$classe,plot="pairs")
+featurePlot(x=train[,43:52],y=subtrain$classe,plot="pairs")
+```
+
+The plots look promising because it does appear that the classes can be separated from each other quite well. 
+
+## Model Building
+
+Let's try using a few different methods and see which one performs best on the cross-validation set:
+
+### Boosted Tree Model (gbm)
+
+```{r}
+set.seed(1234)
+mod1 <- train(classe~.,data=subtrain,method="gbm",verbose=FALSE)
+pred1 <- predict(mod1,newdata=cv)
+confusionMatrix(pred1,cv$classe)
+```
+
+### Random Forest (rf)
+
+We'll limit the number of trees to 100 in order to allow this to run faster, noting that there are diminishing marginal returns on increasing the number of trees and being hopeful that those diminishing marginal returns have set in by ntree=100!
+
+```{r}
+set.seed(5678)
+mod2 <- train(classe~.,data=subtrain,method="rf",ntree=100)
+pred2 <- predict(mod2,newdata=cv)
+confusionMatrix(pred2,cv$classe)
+```
+
+### Support Vector Machine (svm)
+```{r}
+set.seed(15678)
+mod3 <- svm(classe~.,data=subtrain)
+pred3 <- predict(mod3,newdata=cv)
+confusionMatrix(pred3,cv$classe)
+```
+
+The random forest model seems to win out here, with an accuracy of over 99%.  Due to this high accuracy, we can be content with our choice of ntree=100.  Combining the three models may provide some marginal improvement but we will just proceed to use the random forest model.
+
+It is interesting to note that the incorrect classifications were mainly cases where the predicted class was adjacent to the actual class (e.g. actual D was preicted C).
+
+## Apply Model to Testing Set
+
+We apply our random forest model (mod2) to the testing set:
+```{r}
+predtest <- predict(mod2, newdata=test)
+```
+
+After submitting, the predictions were shown to be accurate on all 20 cases in the test set.  
